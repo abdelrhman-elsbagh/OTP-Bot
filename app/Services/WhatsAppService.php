@@ -17,7 +17,6 @@ class WhatsAppService
 
     private function getAppAccessToken()
     {
-        // Use the access token from environment variables initially
         return env('YOUR_APP_ACCESS_TOKEN');
     }
 
@@ -41,9 +40,8 @@ class WhatsAppService
 
             if (isset($data['access_token'])) {
                 $newAccessToken = $data['access_token'];
-                $expiresIn = $data['expires_in']; // in seconds
+                $expiresIn = $data['expires_in'];
 
-                // Cache the new access token
                 Cache::put('whatsapp_access_token', $newAccessToken, now()->addSeconds($expiresIn));
                 Log::info('Obtained and cached new access token', ['token' => $newAccessToken]);
 
@@ -66,20 +64,17 @@ class WhatsAppService
             return $cachedToken;
         }
 
-        // Try to use the initial app access token
         $appAccessToken = $this->getAppAccessToken();
         if ($appAccessToken) {
-            // Cache the initial app access token for a short duration (23 hours for this example)
             Cache::put('whatsapp_access_token', $appAccessToken, now()->addHours(23));
             Log::info('Using initial app access token', ['token' => $appAccessToken]);
             return $appAccessToken;
         }
 
-        // If no cached token and no initial app token, try to refresh using the refresh token
         return $this->refreshAccessToken();
     }
 
-    public function sendMessage($to, $message)
+    public function sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters)
     {
         $accessToken = $this->getCachedAccessToken();
         if (!$accessToken) {
@@ -96,12 +91,30 @@ class WhatsAppService
         $to = preg_replace('/[^0-9]/', '', $to);
         $url = "https://graph.facebook.com/v19.0/{$phoneNumberId}/messages";
 
-        Log::info('Sending message', [
+        $body = [
+            'messaging_product' => 'whatsapp',
             'to' => $to,
-            'message' => $message,
+            'type' => 'template',
+            'template' => [
+                'name' => $templateName,
+                'language' => [
+                    'code' => $templateLanguageCode
+                ],
+                'components' => [
+                    [
+                        'type' => 'body',
+                        'parameters' => $templateParameters
+                    ]
+                ]
+            ]
+        ];
+
+        Log::info('Sending template message', [
+            'to' => $to,
             'url' => $url,
             'accessToken' => $accessToken,
             'phoneNumberId' => $phoneNumberId,
+            'body' => $body,
         ]);
 
         try {
@@ -110,26 +123,30 @@ class WhatsAppService
                     'Authorization' => "Bearer {$accessToken}",
                     'Content-Type' => 'application/json',
                 ],
-                'json' => [
-                    'messaging_product' => 'whatsapp',
-                    'to' => $to,
-                    'type' => 'text',
-                    'text' => [
-                        'body' => $message,
-                    ],
-                ],
+                'json' => $body,
             ]);
 
             $responseBody = json_decode($response->getBody()->getContents(), true);
-            Log::info('Message sent successfully', $responseBody);
+            Log::info('Template message sent successfully', $responseBody);
 
             return $responseBody;
         } catch (\GuzzleHttp\Exception\RequestException $e) {
-            Log::error("Error sending message: " . $e->getMessage());
+            Log::error("Error sending template message: " . $e->getMessage());
             if ($e->hasResponse()) {
                 Log::error("Response: " . $e->getResponse()->getBody()->getContents());
             }
             return null;
         }
+    }
+
+    public function sendOtpMessage($to, $otp)
+    {
+        $templateName = 'otp_message'; // Replace with your actual template name
+        $templateLanguageCode = 'en_US'; // Replace with your template language code if different
+        $templateParameters = [
+            ['type' => 'text', 'text' => $otp]
+        ];
+
+        return $this->sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters);
     }
 }

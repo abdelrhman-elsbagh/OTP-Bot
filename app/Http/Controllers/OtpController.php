@@ -42,9 +42,10 @@ class OtpController extends Controller
 
         // Send OTP via WhatsApp
 
+
         try {
             $message = "OVX Application \n\nYour OTP is: {$otp}";
-            $this->whatsAppService->sendMessage($phone, $message);
+            $this->whatsAppService->sendOtpMessage($phone, $otp);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to send OTP via WhatsApp'], 9500);
         }
