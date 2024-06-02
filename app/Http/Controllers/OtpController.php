@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Otp;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -28,8 +29,8 @@ class OtpController extends Controller
             return response()->json(['error' => $validator->errors()], 400);
         }
 
-        $email = $request->input('email');
-        $phone = $request->input('phone');
+        $email = trim($request->input('email'));
+        $phone = trim($request->input('phone'));
         $otp = mt_rand(1000, 9999);
 
 
@@ -39,13 +40,8 @@ class OtpController extends Controller
             ['otp' => $otp, 'phone' => $phone]
         );
 
-
-        // Send OTP via WhatsApp
-
-
         try {
-            $message = "OVX Application \n\nYour OTP is: {$otp}";
-            $this->whatsAppService->sendOtpMessage($phone, $otp);
+                $this->whatsAppService->sendOtpMessage($phone, $otp);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to send OTP via WhatsApp'], 9500);
         }
@@ -64,16 +60,22 @@ class OtpController extends Controller
             return response()->json(['error' => $validator->errors()], 400);
         }
 
-        $email = $request->input('email');
-        $phone = $request->input('phone');
-        $otp = $request->input('otp');
+        $phone = trim($request->input('phone'));;
+        $otp = trim($request->input('otp'));
 
         $otpRecord = Otp::where('phone', $phone)->where('otp', $otp)->first();
 
         if ($otpRecord) {
-            return response()->json(['valid' => true]);
+            // Check if OTP is within the 10-minute validity period
+            $createdAt = $otpRecord->created_at;
+            if ($createdAt->diffInMinutes(Carbon::now()) <= 10) {
+                return response()->json(['valid' => true]);
+            } else {
+                return response()->json(['valid' => false, 'message' => 'OTP has expired'], 400);
+            }
         } else {
-            return response()->json(['valid' => false], 400);
+            return response()->json(['valid' => false, 'message' => 'Invalid OTP'], 400);
         }
     }
+
 }

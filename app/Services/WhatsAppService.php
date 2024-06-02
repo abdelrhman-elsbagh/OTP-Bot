@@ -40,10 +40,9 @@ class WhatsAppService
 
             if (isset($data['access_token'])) {
                 $newAccessToken = $data['access_token'];
-                $expiresIn = $data['expires_in'];
+                $expiresIn = $data['expires_in']; // in seconds
 
                 Cache::put('whatsapp_access_token', $newAccessToken, now()->addSeconds($expiresIn));
-                Log::info('Obtained and cached new access token', ['token' => $newAccessToken]);
 
                 return $newAccessToken;
             } else {
@@ -67,16 +66,38 @@ class WhatsAppService
         $appAccessToken = $this->getAppAccessToken();
         if ($appAccessToken) {
             Cache::put('whatsapp_access_token', $appAccessToken, now()->addHours(23));
-            Log::info('Using initial app access token', ['token' => $appAccessToken]);
             return $appAccessToken;
         }
 
         return $this->refreshAccessToken();
     }
 
-    public function sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters)
+    private function checkAndRefreshToken()
     {
         $accessToken = $this->getCachedAccessToken();
+
+        try {
+            $response = $this->client->get('https://graph.facebook.com/v19.0/debug_token', [
+                'query' => [
+                    'input_token' => $accessToken,
+                    'access_token' => env('YOUR_APP_ACCESS_TOKEN')
+                ]
+            ]);
+
+            $data = json_decode($response->getBody()->getContents(), true);
+            if (isset($data['data']['is_valid']) && $data['data']['is_valid']) {
+                return $accessToken;
+            }
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            Log::info('Access token is not valid, obtaining a new token.');
+        }
+
+        return $this->refreshAccessToken();
+    }
+
+    public function sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters, $buttonParameters)
+    {
+        $accessToken = $this->checkAndRefreshToken();
         if (!$accessToken) {
             Log::error("Failed to get access token");
             return null;
@@ -89,7 +110,7 @@ class WhatsAppService
         }
 
         $to = preg_replace('/[^0-9]/', '', $to);
-        $url = "https://graph.facebook.com/v19.0/{$phoneNumberId}/messages";
+        $url = "https://graph.facebook.com/v12.0/{$phoneNumberId}/messages";
 
         $body = [
             'messaging_product' => 'whatsapp',
@@ -104,18 +125,16 @@ class WhatsAppService
                     [
                         'type' => 'body',
                         'parameters' => $templateParameters
+                    ],
+                    [
+                        'type' => 'button',
+                        'sub_type' => 'url',
+                        'index' => '0',
+                        'parameters' => $buttonParameters
                     ]
                 ]
             ]
         ];
-
-        Log::info('Sending template message', [
-            'to' => $to,
-            'url' => $url,
-            'accessToken' => $accessToken,
-            'phoneNumberId' => $phoneNumberId,
-            'body' => $body,
-        ]);
 
         try {
             $response = $this->client->post($url, [
@@ -127,7 +146,6 @@ class WhatsAppService
             ]);
 
             $responseBody = json_decode($response->getBody()->getContents(), true);
-            Log::info('Template message sent successfully', $responseBody);
 
             return $responseBody;
         } catch (\GuzzleHttp\Exception\RequestException $e) {
@@ -141,12 +159,15 @@ class WhatsAppService
 
     public function sendOtpMessage($to, $otp)
     {
-        $templateName = 'otp_message'; // Replace with your actual template name
-        $templateLanguageCode = 'en_US'; // Replace with your template language code if different
+        $templateName = 'otp_template'; // Custom template name
+        $templateLanguageCode = 'en_US'; // Language code
         $templateParameters = [
             ['type' => 'text', 'text' => $otp]
         ];
+        $buttonParameters = [
+            ['type' => 'text', 'text' => $otp] // Use OTP for button text parameter
+        ];
 
-        return $this->sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters);
+        return $this->sendTemplateMessage($to, $templateName, $templateLanguageCode, $templateParameters, $buttonParameters);
     }
 }
