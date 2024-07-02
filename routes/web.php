@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// routes/web.php
+
+Route::get('/firebase', [App\Http\Controllers\FirebaseController::class, 'index']);
+
+
 Route::get('/', function () {
     return view('welcome');
 });

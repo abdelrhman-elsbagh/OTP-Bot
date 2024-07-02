@@ -7,10 +7,27 @@ use Illuminate\Support\Facades\Http;
 
 class CurrencyController extends Controller
 {
+    public function getConversionRates()
+    {
+        $apiUrl = 'https://v6.exchangerate-api.com/v6/f9f1b7fb0ada23b3351ab097/latest/USD';
+
+        // Fetch data from the API
+        $response = Http::get($apiUrl);
+
+        // Check if the response is successful
+        if ($response->successful()) {
+            // Extract conversion_rates from the response
+            $conversionRates = $response->json()['conversion_rates'];
+            return response()->json($conversionRates);
+        } else {
+            return response()->json(['error' => 'Unable to fetch data'], $response->status());
+        }
+    }
+
     // Function to fetch the latest exchange rates
     private function fetchExchangeRates()
     {
-        $response = Http::get('https://v6.exchangerate-api.com/v6/88b52f32b1c3bc7a4150ae61/latest/USD');
+        $response = Http::get('https://v6.exchangerate-api.com/v6/f9f1b7fb0ada23b3351ab097/latest/USD');
 
         if ($response->successful()) {
             return $response->json();
